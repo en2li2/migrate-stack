@@ -1,0 +1,4 @@
+# Secret'lar ve sertifikalar repoya girmez
+.env
+certs/
+mysql-data/

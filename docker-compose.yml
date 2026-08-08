@@ -1,0 +1,56 @@
+services:
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: migrate-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+      - ./app:/var/www/html
+    depends_on:
+      - php
+    networks:
+      - migrate
+
+  php:
+    build:
+      context: ./php
+    container_name: migrate-php
+    restart: unless-stopped
+    environment:
+      DB_HOST: mysql
+      DB_DATABASE: ${MYSQL_DATABASE}
+      DB_USERNAME: ${MYSQL_USER}
+      DB_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - ./app:/var/www/html
+    depends_on:
+      - mysql
+    networks:
+      - migrate
+
+  mysql:
+    image: mysql:8.0
+    container_name: migrate-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    command: --default-authentication-plugin=caching_sha2_password
+    volumes:
+      - mysql-data:/var/lib/mysql
+    # Dışarı port AÇILMAZ — sadece iç docker ağı üzerinden erişilir.
+    networks:
+      - migrate
+
+volumes:
+  mysql-data:
+
+networks:
+  migrate:
+    driver: bridge
