@@ -1,27 +1,20 @@
 <?php
-// Geçici sağlık/doğrulama sayfası — gerçek migrate paneli projesi kurulunca değişecek.
-header('Content-Type: text/plain; charset=utf-8');
 
-echo "migrate.wexconnect.com.tr — zemin ayakta\n";
-echo "PHP: " . PHP_VERSION . "\n";
+use Illuminate\Foundation\Application;
+use Illuminate\Http\Request;
 
-$host = getenv('DB_HOST') ?: 'mysql';
-$db   = getenv('DB_DATABASE') ?: 'migrate';
-$user = getenv('DB_USERNAME') ?: 'migrate';
-$pass = getenv('DB_PASSWORD') ?: '';
+define('LARAVEL_START', microtime(true));
 
-try {
-    $pdo = new PDO("mysql:host={$host};dbname={$db};charset=utf8mb4", $user, $pass, [
-        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-        PDO::ATTR_TIMEOUT => 3,
-    ]);
-    $ver = $pdo->query('SELECT VERSION()')->fetchColumn();
-    echo "MySQL: BAGLANDI (server {$ver}, db={$db})\n";
-} catch (Throwable $e) {
-    http_response_code(500);
-    echo "MySQL: BAGLANAMADI — " . $e->getMessage() . "\n";
+// Determine if the application is in maintenance mode...
+if (file_exists($maintenance = __DIR__.'/../storage/framework/maintenance.php')) {
+    require $maintenance;
 }
 
-foreach (['pdo_mysql','mbstring','gd','zip','intl','bcmath','redis','opcache'] as $ext) {
-    echo "ext {$ext}: " . (extension_loaded($ext) ? 'OK' : 'YOK') . "\n";
-}
+// Register the Composer autoloader...
+require __DIR__.'/../vendor/autoload.php';
+
+// Bootstrap Laravel and handle the request...
+/** @var Application $app */
+$app = require_once __DIR__.'/../bootstrap/app.php';
+
+$app->handleRequest(Request::capture());
