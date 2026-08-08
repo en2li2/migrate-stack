@@ -10,8 +10,10 @@ services:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
       - ./certs:/etc/nginx/certs:ro
       - ./app:/var/www/html
+      - ./panel-app:/var/www/panel
     depends_on:
       - php
+      - panel-php
     networks:
       - migrate
 
@@ -27,6 +29,23 @@ services:
       DB_PASSWORD: ${MYSQL_PASSWORD}
     volumes:
       - ./app:/var/www/html
+    depends_on:
+      - mysql
+    networks:
+      - migrate
+
+  panel-php:
+    build:
+      context: ./php
+    container_name: panel-php
+    restart: unless-stopped
+    environment:
+      DB_HOST: mysql
+      DB_DATABASE: isp_panel
+      DB_USERNAME: migrate
+      DB_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - ./panel-app:/var/www/panel
     depends_on:
       - mysql
     networks:
