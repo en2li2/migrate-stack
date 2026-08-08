@@ -64,6 +64,22 @@ return [
             ]) : [],
         ],
 
+        // Legacy kaynak — sunucudaki yerel `legacy` DB (remote 144.76.216.149 DEĞİL).
+        'legacy' => [
+            'driver' => 'mysql',
+            'host' => env('LEGACY_DB_HOST', 'mysql'),
+            'port' => env('LEGACY_DB_PORT', '3306'),
+            'database' => env('LEGACY_DB_DATABASE', 'legacy'),
+            'username' => env('LEGACY_DB_USERNAME', 'migrate'),
+            'password' => env('LEGACY_DB_PASSWORD', ''),
+            'charset' => env('LEGACY_DB_CHARSET', 'utf8mb4'),
+            'collation' => env('LEGACY_DB_COLLATION', 'utf8mb4_unicode_ci'),
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'strict' => true,
+            'engine' => null,
+        ],
+
         'mariadb' => [
             'driver' => 'mariadb',
             'url' => env('DB_URL'),
