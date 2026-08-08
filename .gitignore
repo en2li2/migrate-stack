@@ -2,3 +2,6 @@
 .env
 certs/
 mysql-data/
+
+# panel-app = en2li2/isp_panel deploy kopyası (kendi reposunda versiyonlu)
+panel-app/

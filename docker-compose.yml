@@ -36,7 +36,7 @@ services:
 
   panel-php:
     build:
-      context: ./php
+      context: ./php-panel
     container_name: panel-php
     restart: unless-stopped
     environment:
@@ -67,6 +67,15 @@ services:
     networks:
       - migrate
 
+  redis:
+    image: redis:7-alpine
+    container_name: panel-redis
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+    networks:
+      - migrate
+
   minio:
     image: minio/minio:latest
     container_name: migrate-minio
@@ -85,6 +94,7 @@ services:
 volumes:
   mysql-data:
   minio-data:
+  redis-data:
 
 networks:
   migrate:
