@@ -67,6 +67,36 @@ services:
     networks:
       - migrate
 
+  panel-queue:
+    build:
+      context: ./php-panel
+    container_name: panel-queue
+    restart: unless-stopped
+    working_dir: /var/www/panel
+    command: php artisan queue:work redis --sleep=3 --tries=3 --max-time=3600
+    volumes:
+      - ./panel-app:/var/www/panel
+    depends_on:
+      - mysql
+      - redis
+    networks:
+      - migrate
+
+  panel-scheduler:
+    build:
+      context: ./php-panel
+    container_name: panel-scheduler
+    restart: unless-stopped
+    working_dir: /var/www/panel
+    command: php artisan schedule:work
+    volumes:
+      - ./panel-app:/var/www/panel
+    depends_on:
+      - mysql
+      - redis
+    networks:
+      - migrate
+
   redis:
     image: redis:7-alpine
     container_name: panel-redis
