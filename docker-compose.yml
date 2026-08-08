@@ -67,8 +67,24 @@ services:
     networks:
       - migrate
 
+  minio:
+    image: minio/minio:latest
+    container_name: migrate-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio-data:/data
+    # Host'a port yayınlanmaz — panel iç ağdan http://minio:9000 ile erişir.
+    # (Tarayıcı-erişimi gerekirse s3.wexconnect.com.tr vhost'u sonra eklenir.)
+    networks:
+      - migrate
+
 volumes:
   mysql-data:
+  minio-data:
 
 networks:
   migrate:
