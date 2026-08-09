@@ -4,6 +4,7 @@ namespace App\Filament\Resources\LegacySpecialPrices\Schemas;
 
 use App\Models\LegacyCustomer;
 use App\Models\LegacyPackage;
+use Filament\Actions\Action;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Placeholder;
@@ -77,9 +78,16 @@ class LegacySpecialPriceForm
                 TextInput::make('currency')->label('Para birimi')->default('TRY')->maxLength(8),
 
                 Grid::make(2)->schema([
-                    DatePicker::make('starts_at')->label('Başlangıç')->native(false)->displayFormat('d.m.Y'),
-                    DatePicker::make('ends_at')->label('Bitiş')->native(false)->displayFormat('d.m.Y')
-                        ->helperText('Boş = süresiz'),
+                    DatePicker::make('starts_at')->label('Başlangıç')->native(false)->displayFormat('d.m.Y')
+                        ->hintAction(
+                            Action::make('startNow')->label('Şimdi')
+                                ->action(fn ($set) => $set('starts_at', now()->timezone('Europe/Istanbul')->toDateString())),
+                        ),
+                    DatePicker::make('ends_at')->label('Bitiş')->native(false)->displayFormat('d.m.Y')->required()
+                        ->hintAction(
+                            Action::make('endYear')->label('Yıl sonu')
+                                ->action(fn ($set) => $set('ends_at', now()->timezone('Europe/Istanbul')->endOfYear()->toDateString())),
+                        ),
                 ])->columnSpanFull(),
 
                 Toggle::make('is_active')->label('Aktif')->default(true),
