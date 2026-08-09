@@ -5,7 +5,6 @@ namespace App\Filament\Resources\LegacyCustomers\Pages;
 use App\Filament\Resources\LegacyCustomers\LegacyCustomerResource;
 use App\Services\LegacyCustomerSyncService;
 use Filament\Actions\Action;
-use Filament\Actions\CreateAction;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ListRecords;
 
@@ -16,14 +15,14 @@ class ListLegacyCustomers extends ListRecords
     protected function getHeaderActions(): array
     {
         return [
-            Action::make('importLegacy')
-                ->label('Legacy DB\'den Aktar')
-                ->icon('heroicon-o-arrow-down-tray')
+            Action::make('legacySync')
+                ->label('Legacy Sync')
+                ->icon('heroicon-o-arrow-path')
                 ->color('primary')
                 ->requiresConfirmation()
-                ->modalHeading('Legacy DB\'den Aktar')
-                ->modalDescription('Legacy DB\'den müşteri verileri çekilecek. Elle düzelttiğiniz (kilitli) alanlar ve düzenlenmiş adresler KORUNUR.')
-                ->modalSubmitActionLabel('Aktar')
+                ->modalHeading('Legacy Sync')
+                ->modalDescription('Legacy DB\'den müşteri verileri senkronlanacak. Elle düzelttiğiniz (kilitli) alanlar ve düzenlenmiş adresler KORUNUR.')
+                ->modalSubmitActionLabel('Senkronla')
                 ->action(function (): void {
                     $r = app(LegacyCustomerSyncService::class)->sync();
 
@@ -43,8 +42,6 @@ class ListLegacyCustomers extends ListRecords
                         ->success()
                         ->send();
                 }),
-
-            CreateAction::make()->label('Yeni Müşteri'),
         ];
     }
 }

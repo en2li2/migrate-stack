@@ -18,6 +18,12 @@ class LegacyCustomerResource extends Resource
 {
     protected static ?string $model = LegacyCustomer::class;
 
+    // Ara/geçiş paneli: yeni müşteri oluşturma yok, yalnız legacy'den senkron + düzenleme.
+    public static function canCreate(): bool
+    {
+        return false;
+    }
+
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedUsers;
 
     protected static ?string $navigationLabel = 'Müşteriler';
