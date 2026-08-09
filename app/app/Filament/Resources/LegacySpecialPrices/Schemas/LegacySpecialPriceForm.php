@@ -2,10 +2,16 @@
 
 namespace App\Filament\Resources\LegacySpecialPrices\Schemas;
 
-use Filament\Forms\Components\DateTimePicker;
+use App\Models\LegacyCustomer;
+use App\Models\LegacyPackage;
+use Filament\Forms\Components\DatePicker;
+use Filament\Forms\Components\Hidden;
+use Filament\Forms\Components\Placeholder;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\Toggle;
+use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Schema;
 
 class LegacySpecialPriceForm
@@ -13,31 +19,80 @@ class LegacySpecialPriceForm
     public static function configure(Schema $schema): Schema
     {
         return $schema
+            ->columns(2)
             ->components([
-                TextInput::make('legacy_customer_id')
-                    ->numeric(),
-                TextInput::make('legacy_package_id')
-                    ->numeric(),
-                TextInput::make('package_name'),
-                TextInput::make('price')
+                // Müşteri ara + seç (legacy_id saklanır).
+                Select::make('legacy_customer_id')
+                    ->label('Müşteri')
+                    ->searchable()
                     ->required()
-                    ->numeric()
-                    ->prefix('$'),
-                TextInput::make('currency')
-                    ->required()
-                    ->default('TRY'),
-                DateTimePicker::make('starts_at'),
-                DateTimePicker::make('ends_at'),
-                Toggle::make('is_active')
-                    ->required(),
-                Textarea::make('notes')
-                    ->columnSpanFull(),
-                TextInput::make('locked_fields'),
-                TextInput::make('legacy_source')
-                    ->required()
-                    ->default('proradiusmanager'),
-                TextInput::make('legacy_id'),
-                DateTimePicker::make('legacy_synced_at'),
+                    ->columnSpanFull()
+                    ->getSearchResultsUsing(fn (string $search): array => LegacyCustomer::query()
+                        ->where(function ($q) use ($search): void {
+                            $q->where('name', 'like', "%{$search}%")
+                                ->orWhere('pppoe_username', 'like', "%{$search}%")
+                                ->orWhere('company_title', 'like', "%{$search}%")
+                                ->orWhere('national_id', 'like', "%{$search}%");
+                        })
+                        ->limit(40)
+                        ->get()
+                        ->mapWithKeys(fn (LegacyCustomer $c): array => [$c->legacy_id => self::customerLabel($c)])
+                        ->all())
+                    ->getOptionLabelUsing(fn ($value): ?string => ($c = LegacyCustomer::where('legacy_id', $value)->first()) ? self::customerLabel($c) : null)
+                    ->live()
+                    ->afterStateUpdated(function ($state, callable $set): void {
+                        $c = LegacyCustomer::where('legacy_id', $state)->first();
+                        if ($c && filled($c->package_name)) {
+                            $pkg = LegacyPackage::where('name', $c->package_name)->first();
+                            if ($pkg) {
+                                $set('legacy_package_id', $pkg->legacy_id);
+                                $set('package_name', $pkg->name);
+                            }
+                        }
+                    }),
+
+                // Paket (müşteri seçilince otomatik gelir, değiştirilebilir).
+                Select::make('legacy_package_id')
+                    ->label('Paket')
+                    ->searchable()
+                    ->options(fn (): array => LegacyPackage::orderBy('name')->pluck('name', 'legacy_id')->all())
+                    ->live()
+                    ->afterStateUpdated(function ($state, callable $set): void {
+                        $p = LegacyPackage::where('legacy_id', $state)->first();
+                        $set('package_name', $p?->name);
+                    }),
+                Placeholder::make('list_price')
+                    ->label('Liste fiyatı')
+                    ->content(function ($get): string {
+                        $p = LegacyPackage::where('legacy_id', $get('legacy_package_id'))->first();
+
+                        return $p && $p->price !== null
+                            ? number_format((float) $p->price, 2, ',', '.').' '.($p->currency ?: 'TRY')
+                            : '—';
+                    }),
+
+                Hidden::make('package_name'),
+
+                TextInput::make('price')->label('Özel Fiyat')->numeric()->prefix('₺')->required(),
+                TextInput::make('currency')->label('Para birimi')->default('TRY')->maxLength(8),
+
+                Grid::make(2)->schema([
+                    DatePicker::make('starts_at')->label('Başlangıç')->native(false)->displayFormat('d.m.Y'),
+                    DatePicker::make('ends_at')->label('Bitiş')->native(false)->displayFormat('d.m.Y')
+                        ->helperText('Boş = süresiz'),
+                ])->columnSpanFull(),
+
+                Toggle::make('is_active')->label('Aktif')->default(true),
+
+                Textarea::make('notes')->label('Not')->rows(2)->columnSpanFull(),
             ]);
+    }
+
+    private static function customerLabel(LegacyCustomer $c): string
+    {
+        $name = $c->name ?: ($c->company_title ?: '—');
+        $extra = collect([$c->pppoe_username, $c->national_id])->filter()->implode(' · ');
+
+        return $extra !== '' ? "{$name} ({$extra})" : $name;
     }
 }

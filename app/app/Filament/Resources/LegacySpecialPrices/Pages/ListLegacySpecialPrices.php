@@ -13,7 +13,9 @@ class ListLegacySpecialPrices extends ListRecords
     protected function getHeaderActions(): array
     {
         return [
-            CreateAction::make(),
+            CreateAction::make()
+                ->label('Yeni Özel Fiyat')
+                ->icon('heroicon-o-plus'),
         ];
     }
 }

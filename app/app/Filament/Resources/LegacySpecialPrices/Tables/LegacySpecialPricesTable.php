@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\LegacySpecialPrices\Tables;
 
+use App\Models\LegacyCustomer;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
@@ -16,39 +17,37 @@ class LegacySpecialPricesTable
         return $table
             ->columns([
                 TextColumn::make('legacy_customer_id')
-                    ->numeric()
-                    ->sortable(),
-                TextColumn::make('legacy_package_id')
-                    ->numeric()
-                    ->sortable(),
+                    ->label('Müşteri')
+                    ->searchable()
+                    ->formatStateUsing(fn ($state): string => LegacyCustomer::where('legacy_id', $state)->value('name') ?: (string) $state),
                 TextColumn::make('package_name')
-                    ->searchable(),
+                    ->label('Paket')
+                    ->searchable()
+                    ->placeholder('—'),
                 TextColumn::make('price')
-                    ->money()
+                    ->label('Özel Fiyat')
+                    ->money('TRY')
                     ->sortable(),
-                TextColumn::make('currency')
-                    ->searchable(),
                 TextColumn::make('starts_at')
-                    ->dateTime()
+                    ->label('Başlangıç')
+                    ->date('d.m.Y')
+                    ->placeholder('—')
                     ->sortable(),
                 TextColumn::make('ends_at')
-                    ->dateTime()
+                    ->label('Bitiş')
+                    ->date('d.m.Y')
+                    ->placeholder('süresiz')
                     ->sortable(),
                 IconColumn::make('is_active')
+                    ->label('Aktif')
                     ->boolean(),
                 TextColumn::make('legacy_source')
-                    ->searchable(),
-                TextColumn::make('legacy_id')
-                    ->searchable(),
-                TextColumn::make('legacy_synced_at')
-                    ->dateTime()
-                    ->sortable(),
-                TextColumn::make('created_at')
-                    ->dateTime()
-                    ->sortable()
+                    ->label('Kaynak')
+                    ->badge()
                     ->toggleable(isToggledHiddenByDefault: true),
-                TextColumn::make('updated_at')
-                    ->dateTime()
+                TextColumn::make('created_at')
+                    ->label('Oluşturulma')
+                    ->dateTime('d.m.Y H:i')
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
@@ -56,11 +55,11 @@ class LegacySpecialPricesTable
                 //
             ])
             ->recordActions([
-                EditAction::make(),
+                EditAction::make()->label('Düzenle'),
             ])
             ->toolbarActions([
                 BulkActionGroup::make([
-                    DeleteBulkAction::make(),
+                    DeleteBulkAction::make()->label('Seçilileri sil'),
                 ]),
             ]);
     }
