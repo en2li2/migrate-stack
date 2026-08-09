@@ -7,6 +7,7 @@ use App\Models\LegacyCustomer;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Forms\Components\FileUpload;
+use Filament\Navigation\NavigationItem;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Support\Icons\Heroicon;
@@ -21,20 +22,42 @@ class EvrakResource extends Resource
 
     protected static ?string $slug = 'evrak';
 
-    protected static ?string $navigationLabel = 'Evrak';
+    protected static ?string $navigationLabel = 'Evraklar';
 
     protected static ?string $modelLabel = 'Evrak';
 
-    protected static ?string $pluralModelLabel = 'Evrak';
-
-    protected static string|\UnitEnum|null $navigationGroup = 'Veri';
+    protected static ?string $pluralModelLabel = 'Evraklar';
 
     protected static ?int $navigationSort = 5;
+
+    // Sol menüde 'Evraklar' başlığı altında 3 alt öğe (durum bazlı) göster.
+    public static function getNavigationItems(): array
+    {
+        $items = [
+            ['durum' => 'bekleyen', 'label' => 'Bekleyen Evraklar', 'icon' => 'heroicon-o-clock'],
+            ['durum' => 'eksik', 'label' => 'Eksik Evraklar', 'icon' => 'heroicon-o-exclamation-triangle'],
+            ['durum' => 'tamamlanan', 'label' => 'Tamamlanan Evraklar', 'icon' => 'heroicon-o-check-circle'],
+        ];
+
+        $sort = 0;
+
+        return array_map(function (array $it) use (&$sort): NavigationItem {
+            $sort++;
+
+            return NavigationItem::make($it['label'])
+                ->group('Evraklar')
+                ->icon($it['icon'])
+                ->sort($sort)
+                ->url(static::getUrl('index', ['durum' => $it['durum']]))
+                ->isActiveWhen(fn (): bool => request()->routeIs(static::getRouteBaseName().'.index')
+                    && request()->query('durum', 'bekleyen') === $it['durum']);
+        }, $items);
+    }
 
     // ── Null-safe evrak SQL'i (JSON_LENGTH(json_null)=1 tuzağına düşmez) ──
     public static function hasDocSql(string $key): string
     {
-        return "(COALESCE(JSON_TYPE(JSON_EXTRACT(documents, '\$.\"{$key}\"')), 'NULL') <> 'NULL' AND COALESCE(JSON_LENGTH(documents, '\$.\"{$key}\"'), 0) > 0)";
+        return "(COALESCE(JSON_TYPE(JSON_EXTRACT(documents, '$.\"{$key}\"')), 'NULL') <> 'NULL' AND COALESCE(JSON_LENGTH(documents, '$.\"{$key}\"'), 0) > 0)";
     }
 
     public static function anyDocSql(): string
