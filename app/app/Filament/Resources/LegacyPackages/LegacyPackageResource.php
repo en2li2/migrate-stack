@@ -18,6 +18,12 @@ class LegacyPackageResource extends Resource
 {
     protected static ?string $model = LegacyPackage::class;
 
+    // Ara/geçiş paneli: yeni paket oluşturma yok, yalnız Legacy Sync + düzenleme.
+    public static function canCreate(): bool
+    {
+        return false;
+    }
+
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedCube;
 
     protected static ?string $navigationLabel = 'Paketler';

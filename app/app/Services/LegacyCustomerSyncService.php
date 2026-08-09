@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\LegacyCustomer;
 use App\Models\LegacyCustomerPackage;
 use App\Models\LegacyCustomerUsage;
+use App\Models\LegacyPackage;
 use Illuminate\Support\Facades\DB;
 
 // Uzak legacy radius DB (userinfo/raduserqueue/groupinfo/radacct) -> migrate DB.
@@ -102,8 +103,68 @@ class LegacyCustomerSyncService
 
         $packages = $this->syncPackages($queueByUser, $groups, $byLegacyId);
         $usage = $this->syncUsage($byUsername);
+        $catalog = $this->syncPackageCatalog($groups);
 
-        return ['created' => $created, 'updated' => $updated, 'deleted' => $deleted, 'packages' => $packages, 'usage' => $usage, 'skipped_delete' => false];
+        return ['created' => $created, 'updated' => $updated, 'deleted' => $deleted, 'packages' => $packages, 'usage' => $usage, 'catalog' => $catalog, 'skipped_delete' => false];
+    }
+
+    /** groupinfo -> legacy_packages (paket kataloğu). Elle düzeltilen (kilitli) alanları EZMEZ. */
+    private function syncPackageCatalog(\Illuminate\Support\Collection $groups): int
+    {
+        $seen = [];
+
+        foreach ($groups as $g) {
+            $legacyId = (string) $g->id;
+            $seen[] = $legacyId;
+
+            $durType = ($g->expirationUnitType ?? '') !== '' ? $g->expirationUnitType : null;
+            $durVal = (int) ($g->expirationUnitValue ?? 0);
+            $durDays = match ($durType) {
+                'month' => $durVal * 30,
+                'week' => $durVal * 7,
+                'year' => $durVal * 365,
+                'day' => $durVal,
+                default => $durVal,
+            };
+
+            $payload = [
+                'name' => $g->name ?: null,
+                'download_rate' => (int) ($g->downrate ?? 0),
+                'upload_rate' => (int) ($g->uprate ?? 0),
+                'price' => isset($g->price) && $g->price !== '' ? (float) $g->price : null,
+                'currency' => 'TRY',
+                'duration_days' => $durDays ?: null,
+                'duration_type' => $durType,
+                'duration_value' => $durVal ?: null,
+                'is_active' => true,
+                'radius_group_name' => $g->name ?: null,
+                'framed_pool' => ($g->groupFramedPool ?? '') !== '' ? $g->groupFramedPool : null,
+                'simultaneous_use' => (int) ($g->simUse ?? 0),
+                'description' => ($g->note ?? '') !== '' ? $g->note : null,
+                'legacy_payload' => (array) $g,
+                'legacy_synced_at' => now(),
+            ];
+
+            $existing = LegacyPackage::where('legacy_source', self::SOURCE)->where('legacy_id', $legacyId)->first();
+
+            if ($existing) {
+                foreach ((array) ($existing->locked_fields ?? []) as $lockedField) {
+                    unset($payload[$lockedField]);
+                }
+                $existing->fill($payload)->save();
+            } else {
+                $p = new LegacyPackage();
+                $p->legacy_source = self::SOURCE;
+                $p->legacy_id = $legacyId;
+                $p->fill($payload)->save();
+            }
+        }
+
+        if ($seen !== []) {
+            LegacyPackage::where('legacy_source', self::SOURCE)->whereNotIn('legacy_id', $seen)->delete();
+        }
+
+        return count($seen);
     }
 
     /** raduserqueue -> legacy_customer_packages (bulk upsert + delete-sync). */

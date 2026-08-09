@@ -13,66 +13,86 @@ class LegacyPackagesTable
 {
     public static function configure(Table $table): Table
     {
+        $mbps = static fn ($state): string => $state ? round(((int) $state) / 1048576, 1).' Mbps' : '—';
+
         return $table
+            ->defaultSort('name')
             ->columns([
-                TextColumn::make('legacy_source')
-                    ->searchable(),
                 TextColumn::make('legacy_id')
-                    ->searchable(),
+                    ->label('Legacy ID')
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('name')
-                    ->searchable(),
+                    ->label('Ad')
+                    ->searchable()
+                    ->sortable(),
                 TextColumn::make('code')
-                    ->searchable(),
+                    ->label('Kod')
+                    ->searchable()
+                    ->placeholder('—'),
                 TextColumn::make('download_rate')
-                    ->numeric()
+                    ->label('İndirme')
+                    ->formatStateUsing($mbps)
                     ->sortable(),
                 TextColumn::make('upload_rate')
-                    ->numeric()
+                    ->label('Yükleme')
+                    ->formatStateUsing($mbps)
                     ->sortable(),
                 TextColumn::make('price')
-                    ->money()
+                    ->label('Fiyat')
+                    ->money('TRY')
                     ->sortable(),
-                TextColumn::make('currency')
-                    ->searchable(),
-                TextColumn::make('duration_days')
-                    ->numeric()
-                    ->sortable(),
-                TextColumn::make('duration_type')
-                    ->searchable(),
                 TextColumn::make('duration_value')
-                    ->numeric()
+                    ->label('Süre')
+                    ->formatStateUsing(fn ($state, $record): string => $state ? $state.' '.self::durLabel($record->duration_type) : '—')
                     ->sortable(),
-                IconColumn::make('is_active')
-                    ->boolean(),
+                TextColumn::make('duration_days')
+                    ->label('Gün')
+                    ->numeric()
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('radius_group_name')
-                    ->searchable(),
+                    ->label('RADIUS grubu')
+                    ->searchable()
+                    ->toggleable(),
                 TextColumn::make('framed_pool')
-                    ->searchable(),
+                    ->label('IP havuzu')
+                    ->searchable()
+                    ->toggleable(),
                 TextColumn::make('simultaneous_use')
+                    ->label('Eşzamanlı')
                     ->numeric()
-                    ->sortable(),
+                    ->toggleable(isToggledHiddenByDefault: true),
+                IconColumn::make('is_active')
+                    ->label('Aktif')
+                    ->boolean(),
                 TextColumn::make('legacy_synced_at')
-                    ->dateTime()
-                    ->sortable(),
-                TextColumn::make('created_at')
-                    ->dateTime()
+                    ->label('Son senkron')
+                    ->dateTime('d.m.Y H:i')
                     ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true),
-                TextColumn::make('updated_at')
-                    ->dateTime()
-                    ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->toggleable(),
             ])
             ->filters([
                 //
             ])
             ->recordActions([
-                EditAction::make(),
+                EditAction::make()->label('Düzenle'),
             ])
             ->toolbarActions([
                 BulkActionGroup::make([
-                    DeleteBulkAction::make(),
+                    DeleteBulkAction::make()->label('Seçilileri sil'),
                 ]),
             ]);
+    }
+
+    private static function durLabel(?string $type): string
+    {
+        return match ($type) {
+            'month' => 'ay',
+            'week' => 'hafta',
+            'year' => 'yıl',
+            'day' => 'gün',
+            default => (string) $type,
+        };
     }
 }
