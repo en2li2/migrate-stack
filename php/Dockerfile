@@ -15,6 +15,17 @@ RUN chmod +x /usr/local/bin/install-php-extensions && \
       exif \
       redis
 
+# Kimlik OCR: tesseract (TR dil paketi) + ImageMagick 7 (magick) + ghostscript.
+# IM7 PDF politikası varsayılan kapalı → PDF kimlik okunabilsin diye açılır.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+      tesseract-ocr \
+      tesseract-ocr-tur \
+      imagemagick \
+      ghostscript \
+    && (sed -i 's/rights="none" pattern="PDF"/rights="read|write" pattern="PDF"/' /etc/ImageMagick-7/policy.xml || true) \
+    && rm -rf /var/lib/apt/lists/*
+
 # Composer (proje aşamasında lazım olacak)
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 

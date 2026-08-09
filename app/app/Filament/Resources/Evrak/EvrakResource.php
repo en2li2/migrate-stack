@@ -4,12 +4,14 @@ namespace App\Filament\Resources\Evrak;
 
 use App\Filament\Resources\Evrak\Pages;
 use App\Models\LegacyCustomer;
+use App\Services\Identity\IdentityVerificationService;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Forms\Components\FileUpload;
 use Filament\Navigation\NavigationItem;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
+use Filament\Support\Exceptions\Halt;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
@@ -26,7 +28,7 @@ class EvrakResource extends Resource
 
     protected static ?string $modelLabel = 'Evrak';
 
-    protected static ?string $pluralModelLabel = 'Evraklar';
+    protected static ?string $pluralModelLabel = 'Evrak';
 
     protected static ?int $navigationSort = 5;
 
@@ -112,10 +114,44 @@ class EvrakResource extends Resource
                         self::docUpload('documents.other', 'Diğer Evraklar', 0)->columnSpanFull(),
                     ])
                     ->action(function (LegacyCustomer $r, array $data): void {
-                        $r->update(['documents' => $data['documents'] ?? []]);
+                        $documents = $data['documents'] ?? [];
+
+                        // Kimlik ön+arka yüklenmişse OCR ile karta göre doğrula:
+                        // yanlış kişinin kimliği yüklenmesin. Kurumsalda yetkilinin
+                        // kimliği (yetkili TC/ad/soyad) esas alınır.
+                        $isCompany = $r->customer_type === 'company';
+                        $cardTc = (string) ($isCompany ? $r->authorized_national_id : $r->national_id);
+                        $cardFirst = (string) ($isCompany ? $r->authorized_first_name : ($r->first_name ?: ''));
+                        $cardLast = (string) ($isCompany ? $r->authorized_last_name : ($r->last_name ?: $r->name));
+
+                        $verification = app(IdentityVerificationService::class)->verifyAgainstCard(
+                            $documents['identity_front'] ?? null,
+                            $documents['identity_back'] ?? null,
+                            $cardTc,
+                            $cardFirst,
+                            $cardLast,
+                        );
+
+                        if ($verification['blocked']) {
+                            Notification::make()
+                                ->title('Kimlik doğrulanamadı — evrak kaydedilmedi')
+                                ->body($verification['reason'])
+                                ->danger()
+                                ->persistent()
+                                ->send();
+
+                            throw new Halt();
+                        }
+
+                        $r->update(['documents' => $documents]);
+
+                        $suffix = $verification['engine_down']
+                            ? ' (OCR motoru kapalı — kimlik doğrulaması atlandı)'
+                            : '';
+
                         Notification::make()
                             ->title('Evraklar kaydedildi')
-                            ->body(($r->name ?: $r->pppoe_username).' — evrak durumu güncellendi.')
+                            ->body(($r->name ?: $r->pppoe_username).' — evrak durumu güncellendi.'.$suffix)
                             ->success()
                             ->send();
                     }),
