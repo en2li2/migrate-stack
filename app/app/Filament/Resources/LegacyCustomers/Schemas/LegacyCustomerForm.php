@@ -118,26 +118,26 @@ class LegacyCustomerForm
     /** Aktif / Bekleyen / Geçmiş paketler — legacy raduserqueue + groupinfo'dan (canlı okuma). */
     protected static function packagesHtml(?LegacyCustomer $record): string
     {
-        if ($record === null || blank($record->legacy_id)) {
-            return '<div style="color:#6b7280;font-size:13px;">Kayıt legacy ile eşleşmemiş.</div>';
+        if ($record === null || $record->getKey() === null) {
+            return '<div style="color:#6b7280;font-size:13px;">Kayıt yok.</div>';
         }
 
-        try {
-            $rows = DB::connection('legacy')->table('raduserqueue as q')
-                ->leftJoin('groupinfo as g', 'g.id', '=', 'q.groupId')
-                ->where('q.userId', $record->legacy_id)
-                ->orderByDesc('q.dateTo')
-                ->get(['q.status', 'q.dateFrom', 'q.dateTo', 'q.quantity', 'g.name', 'g.price']);
-        } catch (\Throwable) {
-            return '<div style="color:#b91c1c;font-size:13px;">Legacy bağlantısı okunamadı.</div>';
+        // Yerel migrate DB'den okunur (Legacy Sync ile doldurulur).
+        $rows = DB::table('legacy_customer_packages')
+            ->where('legacy_customer_id', $record->getKey())
+            ->orderByDesc('ends_at')
+            ->get(['status_code', 'package_name', 'price', 'starts_at', 'ends_at']);
+
+        if ($rows->isEmpty()) {
+            return '<div style="color:#9ca3af;font-size:13px;">Paket kaydı yok. <b>Legacy Sync</b> ile senkronlayın.</div>';
         }
 
-        // status: 1=Aktif, 0=Bekleyen, 2=Geçmiş
+        // status_code: 1=Aktif, 0=Bekleyen, 2=Geçmiş
         $sections = [1 => ['Aktif Paket', '#16a34a'], 0 => ['Bekleyen Paket', '#d97706'], 2 => ['Geçmiş Paket', '#6b7280']];
         $html = '<div style="display:grid;gap:20px;">';
 
         foreach ($sections as $status => [$title, $color]) {
-            $items = $rows->where('status', $status)->values();
+            $items = $rows->where('status_code', $status)->values();
             $limited = $items->take(60);
             $html .= '<div>';
             $html .= '<div style="font-weight:750;font-size:13px;color:'.$color.';margin-bottom:6px;text-transform:uppercase;letter-spacing:.03em;">'
@@ -153,9 +153,9 @@ class LegacyCustomerForm
                 foreach ($limited as $r) {
                     $price = $r->price !== null && $r->price !== '' ? number_format((float) $r->price, 2, ',', '.').' ₺' : '—';
                     $html .= '<tr style="border-bottom:1px solid #f3f4f6;">'
-                        .'<td style="padding:5px 8px;font-weight:600;">'.e($r->name ?: '—').'</td>'
-                        .'<td style="padding:5px 8px;">'.e(static::fmtDate($r->dateFrom)).'</td>'
-                        .'<td style="padding:5px 8px;">'.e(static::fmtDate($r->dateTo)).'</td>'
+                        .'<td style="padding:5px 8px;font-weight:600;">'.e($r->package_name ?: '—').'</td>'
+                        .'<td style="padding:5px 8px;">'.e(static::fmtDate($r->starts_at)).'</td>'
+                        .'<td style="padding:5px 8px;">'.e(static::fmtDate($r->ends_at)).'</td>'
                         .'<td style="padding:5px 8px;">'.e($price).'</td></tr>';
                 }
                 $html .= '</tbody></table>';
@@ -171,14 +171,93 @@ class LegacyCustomerForm
         return $html;
     }
 
+    /** Kullanım (oturum) geçmişi — legacy radacct'ten, pppoe_username ile eşleşir. */
     protected static function usageHtml(?LegacyCustomer $record): string
     {
-        // Legacy DB'de kullanım/accounting (radacct) verisi yok. Kullanım geçmişi
-        // canlı RADIUS accounting kaynağı bağlanınca burada listelenecek.
-        return '<div style="color:#6b7280;font-size:13px;line-height:1.6;">'
-            .'Kullanım geçmişi için legacy veritabanında accounting (radacct) verisi bulunmuyor.<br>'
-            .'Canlı RADIUS kullanım kaynağı bağlandığında bu sekmede oturum/trafik geçmişi listelenecek.'
-            .'</div>';
+        if ($record === null || $record->getKey() === null) {
+            return '<div style="color:#6b7280;font-size:13px;">Kayıt yok.</div>';
+        }
+
+        // Yerel migrate DB'den okunur (Legacy Sync radacct'ten doldurur).
+        $rows = DB::table('legacy_customer_usages')
+            ->where('legacy_customer_id', $record->getKey())
+            ->orderByDesc('started_at')
+            ->limit(50)
+            ->get(['started_at', 'stopped_at', 'session_time', 'download_bytes', 'upload_bytes', 'framed_ip']);
+        $totals = DB::table('legacy_customer_usages')
+            ->where('legacy_customer_id', $record->getKey())
+            ->selectRaw('COUNT(*) c, COALESCE(SUM(download_bytes),0) dl, COALESCE(SUM(upload_bytes),0) ul')
+            ->first();
+
+        if ($rows->isEmpty()) {
+            return '<div style="color:#9ca3af;font-size:13px;">Kullanım kaydı yok. <b>Legacy Sync</b> ile senkronlayın.</div>';
+        }
+
+        $html = '<div style="margin-bottom:12px;font-size:12.5px;color:#374151;">'
+            .'<b>'.(int) $totals->c.'</b> oturum · Toplam indirme <b>'.static::bytes($totals->dl).'</b> · yükleme <b>'.static::bytes($totals->ul).'</b></div>';
+        $html .= '<table style="width:100%;border-collapse:collapse;font-size:12px;">'
+            .'<thead><tr style="text-align:left;color:#6b7280;border-bottom:1px solid #e5e7eb;">'
+            .'<th style="padding:5px 8px;">Başlangıç</th><th style="padding:5px 8px;">Bitiş</th>'
+            .'<th style="padding:5px 8px;">Süre</th><th style="padding:5px 8px;">İndirme</th>'
+            .'<th style="padding:5px 8px;">Yükleme</th><th style="padding:5px 8px;">IP</th></tr></thead><tbody>';
+        foreach ($rows as $r) {
+            $stop = blank($r->stopped_at)
+                ? '<span style="color:#16a34a;font-weight:700;">● aktif</span>'
+                : e(static::fmtDateTime($r->stopped_at));
+            $html .= '<tr style="border-bottom:1px solid #f3f4f6;">'
+                .'<td style="padding:5px 8px;">'.e(static::fmtDateTime($r->started_at)).'</td>'
+                .'<td style="padding:5px 8px;">'.$stop.'</td>'
+                .'<td style="padding:5px 8px;">'.e(static::duration((int) $r->session_time)).'</td>'
+                .'<td style="padding:5px 8px;">'.e(static::bytes($r->download_bytes)).'</td>'
+                .'<td style="padding:5px 8px;">'.e(static::bytes($r->upload_bytes)).'</td>'
+                .'<td style="padding:5px 8px;font-family:ui-monospace,monospace;color:#6b7280;">'.e($r->framed_ip ?: '—').'</td></tr>';
+        }
+        $html .= '</tbody></table>';
+        if ((int) $totals->c > 50) {
+            $html .= '<div style="color:#9ca3af;font-size:11.5px;margin-top:4px;">Son 50 oturum gösteriliyor · toplam '.(int) $totals->c.'</div>';
+        }
+
+        return $html;
+    }
+
+    protected static function fmtDateTime(mixed $value): string
+    {
+        if (blank($value)) {
+            return '—';
+        }
+
+        try {
+            return \Illuminate\Support\Carbon::parse((string) $value)->format('d.m.Y H:i');
+        } catch (\Throwable) {
+            return (string) $value;
+        }
+    }
+
+    protected static function bytes(mixed $n): string
+    {
+        $n = (float) $n;
+        if ($n <= 0) {
+            return '0';
+        }
+        $units = ['B', 'KB', 'MB', 'GB', 'TB'];
+        $i = (int) floor(log($n, 1024));
+        $i = max(0, min($i, count($units) - 1));
+
+        return number_format($n / (1024 ** $i), $i >= 2 ? 2 : 0, ',', '.').' '.$units[$i];
+    }
+
+    protected static function duration(int $seconds): string
+    {
+        if ($seconds <= 0) {
+            return '—';
+        }
+        $h = intdiv($seconds, 3600);
+        $m = intdiv($seconds % 3600, 60);
+        if ($h > 0) {
+            return $h.'s '.$m.'d';
+        }
+
+        return $m.'d';
     }
 
     protected static function fmtDate(mixed $value): string
