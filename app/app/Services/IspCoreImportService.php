@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\LegacyCustomer;
+use App\Models\LegacyCustomerPackage;
 use App\Models\LegacyPackage;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
@@ -29,7 +30,87 @@ class IspCoreImportService
         return [
             'packages' => $this->pushPackages($dryRun),
             'customers' => $this->pushCustomers($dryRun),
+            'customer_packages' => $this->pushCustomerPackages($dryRun),
         ];
+    }
+
+    /**
+     * Müşteri geçmiş (status 2) + bekleyen (status 0) paketlerini gönderir.
+     * Müşteri başına gruplanır (customer_id CRM'de pppoe ile çözülür).
+     *
+     * @return array<string, int>
+     */
+    public function pushCustomerPackages(bool $dryRun = false): array
+    {
+        [$base, $token] = $this->target();
+        $summary = ['customers' => 0, 'skipped' => 0, 'history' => 0, 'pending' => 0];
+
+        LegacyCustomer::query()
+            ->whereNotNull('pppoe_username')
+            ->where('pppoe_username', '<>', '')
+            ->orderBy('id')
+            ->chunkById(100, function ($chunk) use ($base, $token, $dryRun, &$summary): void {
+                // Bu partinin paketlerini yükle (16k satırı belleğe almadan; aktif=1 hariç).
+                $byCustomer = LegacyCustomerPackage::query()
+                    ->whereIn('legacy_customer_id', $chunk->pluck('id'))
+                    ->whereIn('status_code', [0, 2])
+                    ->get()
+                    ->groupBy('legacy_customer_id');
+
+                $payload = [];
+
+                foreach ($chunk as $c) {
+                    $rows = $byCustomer[$c->id] ?? collect();
+                    if ($rows->isEmpty()) {
+                        continue;
+                    }
+
+                    $history = [];
+                    $pending = [];
+                    foreach ($rows as $r) {
+                        $item = [
+                            'legacy_id' => (string) $r->legacy_queue_id,
+                            'package_name' => $r->package_name,
+                        ];
+                        if ((int) $r->status_code === 2) {
+                            $item['started_at'] = $r->starts_at;
+                            $item['ended_at'] = $r->ends_at;
+                            $history[] = $item;
+                        } elseif ((int) $r->status_code === 0) {
+                            $item['starts_at'] = $r->starts_at;
+                            $item['ends_at'] = $r->ends_at;
+                            $pending[] = $item;
+                        }
+                    }
+
+                    if ($history !== [] || $pending !== []) {
+                        $payload[] = [
+                            'pppoe_username' => $c->pppoe_username,
+                            'history' => $history,
+                            'pending' => $pending,
+                        ];
+                    }
+                }
+
+                if ($payload === []) {
+                    return;
+                }
+
+                $response = Http::withToken($token)->acceptJson()->asJson()->timeout(180)
+                    ->post($base.'/api/internal/migrate/customer-packages', [
+                        'dry_run' => $dryRun,
+                        'customers' => $payload,
+                    ]);
+
+                if ($response->successful()) {
+                    $s = (array) $response->json('summary', []);
+                    foreach (['customers', 'skipped', 'history', 'pending'] as $k) {
+                        $summary[$k] += (int) ($s[$k] ?? 0);
+                    }
+                }
+            });
+
+        return $summary;
     }
 
     /**

@@ -26,12 +26,14 @@ class Dashboard extends BaseDashboard
                         $r = app(IspCoreImportService::class)->pushAll(false);
                         $p = $r['packages'];
                         $c = $r['customers'];
+                        $cp = $r['customer_packages'];
 
                         Notification::make()
                             ->title('Aktarım tamamlandı')
                             ->body(
                                 "Paket: {$p['total']} (yeni {$p['created']} · güncel {$p['updated']})\n"
-                                ."Müşteri: {$c['total']} (yeni {$c['created']} · güncel {$c['updated']} · hata {$c['error']})"
+                                ."Müşteri: {$c['total']} (yeni {$c['created']} · güncel {$c['updated']} · hata {$c['error']})\n"
+                                ."Paket geçmişi: {$cp['history']} · Bekleyen: {$cp['pending']}"
                             )
                             ->success()
                             ->send();
