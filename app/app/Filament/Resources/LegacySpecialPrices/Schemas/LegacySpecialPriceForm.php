@@ -22,7 +22,7 @@ class LegacySpecialPriceForm
         return $schema
             ->columns(2)
             ->components([
-                // Müşteri ara + seç (legacy_id saklanır).
+                // Müşteri ara + seç (YEREL id saklanır; FK legacy_customers.id).
                 Select::make('legacy_customer_id')
                     ->label('Müşteri')
                     ->searchable()
@@ -37,16 +37,16 @@ class LegacySpecialPriceForm
                         })
                         ->limit(40)
                         ->get()
-                        ->mapWithKeys(fn (LegacyCustomer $c): array => [$c->legacy_id => self::customerLabel($c)])
+                        ->mapWithKeys(fn (LegacyCustomer $c): array => [$c->id => self::customerLabel($c)])
                         ->all())
-                    ->getOptionLabelUsing(fn ($value): ?string => ($c = LegacyCustomer::where('legacy_id', $value)->first()) ? self::customerLabel($c) : null)
+                    ->getOptionLabelUsing(fn ($value): ?string => ($c = LegacyCustomer::find($value)) ? self::customerLabel($c) : null)
                     ->live()
                     ->afterStateUpdated(function ($state, callable $set): void {
-                        $c = LegacyCustomer::where('legacy_id', $state)->first();
+                        $c = LegacyCustomer::find($state);
                         if ($c && filled($c->package_name)) {
                             $pkg = LegacyPackage::where('name', $c->package_name)->first();
                             if ($pkg) {
-                                $set('legacy_package_id', $pkg->legacy_id);
+                                $set('legacy_package_id', $pkg->id);
                                 $set('package_name', $pkg->name);
                             }
                         }
@@ -56,16 +56,16 @@ class LegacySpecialPriceForm
                 Select::make('legacy_package_id')
                     ->label('Paket')
                     ->searchable()
-                    ->options(fn (): array => LegacyPackage::orderBy('name')->pluck('name', 'legacy_id')->all())
+                    ->options(fn (): array => LegacyPackage::orderBy('name')->pluck('name', 'id')->all())
                     ->live()
                     ->afterStateUpdated(function ($state, callable $set): void {
-                        $p = LegacyPackage::where('legacy_id', $state)->first();
+                        $p = LegacyPackage::find($state);
                         $set('package_name', $p?->name);
                     }),
                 Placeholder::make('list_price')
                     ->label('Liste fiyatı')
                     ->content(function ($get): string {
-                        $p = LegacyPackage::where('legacy_id', $get('legacy_package_id'))->first();
+                        $p = LegacyPackage::find($get('legacy_package_id'));
 
                         return $p && $p->price !== null
                             ? number_format((float) $p->price, 2, ',', '.').' '.($p->currency ?: 'TRY')
