@@ -304,6 +304,7 @@ class IspCoreImportService
             'address' => $c->address,
             'address_building_name' => $c->address_building_name,
             'structured_address_text' => $c->structured_address_text,
+            'static_ip' => $c->static_ip,
             // Aktif paket bağı (CRM ada göre service_package_id + hızı çözer).
             'package_name' => $c->package_name,
             'status' => $c->status,

@@ -41,6 +41,8 @@ class LegacyCustomerSyncService
             ->keyBy('username');
         $expByUsername = DB::connection('legacy')->table('radcheck')
             ->where('attribute', 'Expiration')->get()->keyBy('username');
+        $staticByUsername = DB::connection('legacy')->table('radreply')
+            ->where('attribute', 'Framed-IP-Address')->pluck('value', 'username');
 
         // Mevcut müşterileri önden yükle (907 tekil SELECT yerine tek sorgu).
         $existingByLegacyId = LegacyCustomer::where('legacy_source', self::SOURCE)->get()->keyBy('legacy_id');
@@ -80,6 +82,7 @@ class LegacyCustomerSyncService
             $payload = [
                 'pppoe_username' => $u->username ?: null,
                 'pppoe_password' => ($u->password ?? '') !== '' ? $u->password : null,
+                'static_ip' => ($staticByUsername[$u->username] ?? '') !== '' ? $staticByUsername[$u->username] : null,
                 'first_name' => ($u->fname ?? '') !== '' ? $u->fname : null,
                 'last_name' => ($u->lname ?? '') !== '' ? $u->lname : null,
                 'company_title' => $isCorporate ? $u->company : null,
