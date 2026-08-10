@@ -34,6 +34,14 @@ class LegacyCustomerSyncService
         $groups = DB::connection('legacy')->table('groupinfo')->get()->keyBy('id');
         $queueByUser = DB::connection('legacy')->table('raduserqueue')->get()->groupBy('userId');
 
+        // Guncel paket/bitis authoritative kaynagi: radusergroup (grup) + radcheck (Expiration).
+        // raduserqueue status=1 her musteride isaretli degil (suresi gecmis ama kayitli).
+        $groupByUsername = DB::connection('legacy')->table('radusergroup')->get()
+            ->filter(fn ($r): bool => filled($r->groupname ?? null))
+            ->keyBy('username');
+        $expByUsername = DB::connection('legacy')->table('radcheck')
+            ->where('attribute', 'Expiration')->get()->keyBy('username');
+
         // Mevcut müşterileri önden yükle (907 tekil SELECT yerine tek sorgu).
         $existingByLegacyId = LegacyCustomer::where('legacy_source', self::SOURCE)->get()->keyBy('legacy_id');
 
@@ -45,13 +53,27 @@ class LegacyCustomerSyncService
             $legacyId = (string) $u->id;
             $seen[] = $legacyId;
 
-            // Aktif abonelik dönemi (status=1) -> paket + bitiş
-            $active = ($queueByUser[$u->id] ?? collect())->firstWhere('status', 1);
-            $packageName = null;
+            // Guncel paket = radusergroup grup adi; bitis = radcheck Expiration.
+            // Suresi gecmisse gercek (gecmis) tarih gelir -> CRM otomatik 'Expired'.
+            $username = $u->username ?: null;
+            $packageName = $username ? ($groupByUsername[$username]->groupname ?? null) : null;
             $endsAt = null;
-            if ($active) {
-                $endsAt = $active->dateTo ?: null;
-                $packageName = $groups[$active->groupId]->name ?? null;
+            $rawExp = $username ? ($expByUsername[$username]->value ?? null) : null;
+            if (filled($rawExp)) {
+                try {
+                    $endsAt = \Illuminate\Support\Carbon::parse($rawExp)->toDateTimeString();
+                } catch (\Throwable) {
+                    $endsAt = null;
+                }
+            }
+            // Fallback: raduserqueue (aktif status=1 ya da en guncel donem).
+            if ($packageName === null || $endsAt === null) {
+                $queue = $queueByUser[$u->id] ?? collect();
+                $active = $queue->firstWhere('status', 1) ?? $queue->sortByDesc('dateTo')->first();
+                if ($active) {
+                    $packageName ??= $groups[$active->groupId]->name ?? null;
+                    $endsAt ??= ($active->dateTo ?: null);
+                }
             }
 
             $isCorporate = filled($u->company ?? null);
