@@ -28,6 +28,7 @@ class Dashboard extends BaseDashboard
                         $p = $r['packages'];
                         $c = $r['customers'];
                         $cp = $r['customer_packages'];
+                        $us = $r['usage'];
 
                         Notification::make()
                             ->title('Aktarım tamamlandı')
@@ -35,7 +36,8 @@ class Dashboard extends BaseDashboard
                                 "NAS: {$n['total']} (yeni {$n['created']} · güncel {$n['updated']})\n"
                                 ."Paket: {$p['total']} (yeni {$p['created']} · güncel {$p['updated']})\n"
                                 ."Müşteri: {$c['total']} (yeni {$c['created']} · güncel {$c['updated']} · hata {$c['error']})\n"
-                                ."Paket geçmişi: {$cp['history']} · Bekleyen: {$cp['pending']}"
+                                ."Paket geçmişi: {$cp['history']} · Bekleyen: {$cp['pending']}\n"
+                                ."Kullanım özeti: {$us['upserted']}"
                             )
                             ->success()
                             ->send();

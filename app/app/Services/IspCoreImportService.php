@@ -6,6 +6,7 @@ use App\Models\LegacyCustomer;
 use App\Models\LegacyCustomerPackage;
 use App\Models\LegacyNas;
 use App\Models\LegacyPackage;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
 
@@ -33,7 +34,58 @@ class IspCoreImportService
             'packages' => $this->pushPackages($dryRun),
             'customers' => $this->pushCustomers($dryRun),
             'customer_packages' => $this->pushCustomerPackages($dryRun),
+            'usage' => $this->pushUsage($dryRun),
         ];
+    }
+
+    /**
+     * Kullanım geçmişini (legacy_customer_usages) aya göre toplayıp CRM
+     * customer_usage_summaries'a gönderir.
+     *
+     * @return array<string, int>
+     */
+    public function pushUsage(bool $dryRun = false): array
+    {
+        [$base, $token] = $this->target();
+        $summary = ['total' => 0, 'upserted' => 0, 'skipped' => 0];
+
+        $rows = DB::table('legacy_customer_usages as lcu')
+            ->join('legacy_customers as lc', 'lc.id', '=', 'lcu.legacy_customer_id')
+            ->whereNotNull('lc.pppoe_username')
+            ->where('lc.pppoe_username', '<>', '')
+            ->groupBy('lc.pppoe_username', 'period')
+            ->selectRaw("lc.pppoe_username, DATE_FORMAT(lcu.started_at, '%Y-%m') as period, ".
+                'SUM(lcu.upload_bytes) as input_bytes, SUM(lcu.download_bytes) as output_bytes, '.
+                'COUNT(*) as sessions, MIN(lcu.started_at) as first_at, MAX(lcu.started_at) as last_at')
+            ->get();
+
+        if ($rows->isEmpty()) {
+            return $summary;
+        }
+
+        foreach ($rows->chunk(500) as $chunk) {
+            $payload = $chunk->map(fn ($r): array => [
+                'pppoe_username' => $r->pppoe_username,
+                'period' => $r->period,
+                'input_bytes' => (int) $r->input_bytes,
+                'output_bytes' => (int) $r->output_bytes,
+                'sessions' => (int) $r->sessions,
+                'first_at' => $r->first_at,
+                'last_at' => $r->last_at,
+            ])->values()->all();
+
+            $response = Http::withToken($token)->acceptJson()->asJson()->timeout(120)
+                ->post($base.'/api/internal/migrate/usage', ['dry_run' => $dryRun, 'rows' => $payload]);
+
+            if ($response->successful()) {
+                $s = (array) $response->json('summary', []);
+                foreach (['total', 'upserted', 'skipped'] as $k) {
+                    $summary[$k] += (int) ($s[$k] ?? 0);
+                }
+            }
+        }
+
+        return $summary;
     }
 
     /**
@@ -287,7 +339,6 @@ class IspCoreImportService
     {
         return [
             'pppoe_username' => $c->pppoe_username,
-            'pppoe_password' => $c->pppoe_password,
             'customer_type' => $c->customer_type,
             'first_name' => $c->first_name,
             'last_name' => $c->last_name,
@@ -304,7 +355,6 @@ class IspCoreImportService
             'address' => $c->address,
             'address_building_name' => $c->address_building_name,
             'structured_address_text' => $c->structured_address_text,
-            'static_ip' => $c->static_ip,
             // Aktif paket bağı (CRM ada göre service_package_id + hızı çözer).
             'package_name' => $c->package_name,
             'status' => $c->status,
