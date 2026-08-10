@@ -287,6 +287,7 @@ class IspCoreImportService
     {
         return [
             'pppoe_username' => $c->pppoe_username,
+            'pppoe_password' => $c->pppoe_password,
             'customer_type' => $c->customer_type,
             'first_name' => $c->first_name,
             'last_name' => $c->last_name,

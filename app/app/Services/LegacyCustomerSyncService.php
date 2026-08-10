@@ -79,6 +79,7 @@ class LegacyCustomerSyncService
             $isCorporate = filled($u->company ?? null);
             $payload = [
                 'pppoe_username' => $u->username ?: null,
+                'pppoe_password' => ($u->password ?? '') !== '' ? $u->password : null,
                 'first_name' => ($u->fname ?? '') !== '' ? $u->fname : null,
                 'last_name' => ($u->lname ?? '') !== '' ? $u->lname : null,
                 'company_title' => $isCorporate ? $u->company : null,
