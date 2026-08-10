@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\LegacyCustomer;
+use App\Models\LegacyPackage;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
 
@@ -18,17 +19,68 @@ use RuntimeException;
 class IspCoreImportService
 {
     /**
+     * Katalog + müşteri (paket bağıyla) — buton bunu çağırır. Katalog ÖNCE
+     * gitmeli ki müşteri paketi ada göre çözülebilsin.
+     *
+     * @return array{packages: array<string,int>, customers: array<string,int>}
+     */
+    public function pushAll(bool $dryRun = false): array
+    {
+        return [
+            'packages' => $this->pushPackages($dryRun),
+            'customers' => $this->pushCustomers($dryRun),
+        ];
+    }
+
+    /**
+     * Katalog paketlerini (legacy_packages) CRM service_packages'a gönderir.
+     *
+     * @return array<string, int>
+     */
+    public function pushPackages(bool $dryRun = false): array
+    {
+        [$base, $token] = $this->target();
+
+        $summary = ['total' => 0, 'created' => 0, 'updated' => 0, 'skipped' => 0, 'error' => 0, 'would_create' => 0, 'would_update' => 0];
+
+        $packages = LegacyPackage::query()
+            ->whereNotNull('name')
+            ->where('name', '<>', '')
+            ->orderBy('id')
+            ->get()
+            ->map(fn (LegacyPackage $p): array => $this->toPackagePayload($p))
+            ->values()
+            ->all();
+
+        if ($packages === []) {
+            return $summary;
+        }
+
+        $response = Http::withToken($token)->acceptJson()->asJson()->timeout(120)
+            ->post($base.'/api/internal/migrate/packages', ['dry_run' => $dryRun, 'packages' => $packages]);
+
+        if (! $response->successful()) {
+            $summary['error'] = count($packages);
+
+            return $summary;
+        }
+
+        foreach ((array) $response->json('results', []) as $r) {
+            $action = (string) ($r['action'] ?? 'error');
+            $summary['total']++;
+            $summary[$action] = ($summary[$action] ?? 0) + 1;
+        }
+
+        return $summary;
+    }
+
+    /**
      * @return array<string, int>
      */
     public function pushCustomers(bool $dryRun = false): array
     {
-        $base = rtrim((string) config('isp_core_import.base_url'), '/');
-        $token = (string) config('isp_core_import.token');
+        [$base, $token] = $this->target();
         $batchSize = max(1, (int) config('isp_core_import.batch_size', 100));
-
-        if ($base === '' || $token === '') {
-            throw new RuntimeException('ISP Core hedefi yapılandırılmamış (ISP_CORE_IMPORT_BASE_URL / ISP_CORE_IMPORT_TOKEN).');
-        }
 
         $summary = [
             'total' => 0, 'created' => 0, 'updated' => 0, 'skipped' => 0,
@@ -131,7 +183,49 @@ class IspCoreImportService
             'address' => $c->address,
             'address_building_name' => $c->address_building_name,
             'structured_address_text' => $c->structured_address_text,
+            // Aktif paket bağı (CRM ada göre service_package_id + hızı çözer).
+            'package_name' => $c->package_name,
+            'status' => $c->status,
+            'subscription_ends_at' => $c->subscription_ends_at,
             'legacy_id' => $c->legacy_id ?: $c->id,
         ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function toPackagePayload(LegacyPackage $p): array
+    {
+        return [
+            'name' => $p->name,
+            'code' => $p->code,
+            'download_rate' => $p->download_rate,
+            'upload_rate' => $p->upload_rate,
+            'price' => $p->price,
+            'currency' => $p->currency,
+            'duration_days' => $p->duration_days,
+            'duration_type' => $p->duration_type,
+            'duration_value' => $p->duration_value,
+            'is_active' => $p->is_active,
+            'radius_group_name' => $p->radius_group_name,
+            'framed_pool' => $p->framed_pool,
+            'simultaneous_use' => $p->simultaneous_use,
+            'description' => $p->description,
+        ];
+    }
+
+    /**
+     * @return array{0: string, 1: string}
+     */
+    private function target(): array
+    {
+        $base = rtrim((string) config('isp_core_import.base_url'), '/');
+        $token = (string) config('isp_core_import.token');
+
+        if ($base === '' || $token === '') {
+            throw new RuntimeException('ISP Core hedefi yapılandırılmamış (ISP_CORE_IMPORT_BASE_URL / ISP_CORE_IMPORT_TOKEN).');
+        }
+
+        return [$base, $token];
     }
 }

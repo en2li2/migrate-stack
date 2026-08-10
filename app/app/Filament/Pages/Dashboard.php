@@ -23,11 +23,16 @@ class Dashboard extends BaseDashboard
                 ->modalSubmitActionLabel('Aktar')
                 ->action(function (): void {
                     try {
-                        $r = app(IspCoreImportService::class)->pushCustomers(false);
+                        $r = app(IspCoreImportService::class)->pushAll(false);
+                        $p = $r['packages'];
+                        $c = $r['customers'];
 
                         Notification::make()
                             ->title('Aktarım tamamlandı')
-                            ->body("Toplam {$r['total']} · Oluşturulan {$r['created']} · Güncellenen {$r['updated']} · Hata {$r['error']}")
+                            ->body(
+                                "Paket: {$p['total']} (yeni {$p['created']} · güncel {$p['updated']})\n"
+                                ."Müşteri: {$c['total']} (yeni {$c['created']} · güncel {$c['updated']} · hata {$c['error']})"
+                            )
                             ->success()
                             ->send();
                     } catch (Throwable $e) {
