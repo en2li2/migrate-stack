@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\LegacyCustomer;
 use App\Models\LegacyCustomerPackage;
 use App\Models\LegacyCustomerUsage;
+use App\Models\LegacyNas;
 use App\Models\LegacyPackage;
 use Illuminate\Support\Facades\DB;
 
@@ -269,4 +270,61 @@ class LegacyCustomerSyncService
 
         return $value;
     }
+
+    /**
+     * Legacy radius radnas -> legacy_nas (CRM nas_devices tasarımı). Kilitli
+     * alanlar korunur, kaynakta olmayanlar silinir. Boş-okuma guard'lı.
+     */
+    public function syncNasDevices(): int
+    {
+        $rows = DB::connection('legacy')->table('radnas')->get();
+
+        if ($rows->isEmpty()) {
+            return 0;
+        }
+
+        $seen = [];
+
+        foreach ($rows as $n) {
+            $legacyId = (string) $n->id;
+            $seen[] = $legacyId;
+
+            $ip = ($n->ip ?? '') !== '' ? $n->ip : null;
+            $payload = [
+                'name' => ($n->nasName ?? '') !== '' ? $n->nasName : null,
+                'shortname' => ($n->nasName ?? '') !== '' ? $n->nasName : null,
+                'nas_ip_address' => $ip,
+                'secret' => ($n->nasPassword ?? '') !== '' ? $n->nasPassword : null,
+                'type' => ($n->type ?? '') !== '' ? $n->type : null,
+                'status' => 'active',
+                'api_enabled' => (int) ($n->enableApi ?? 0) === 1,
+                'api_host' => $ip,
+                'api_username' => ($n->apiusername ?? '') !== '' ? $n->apiusername : null,
+                'api_password' => ($n->apipassword ?? '') !== '' ? $n->apipassword : null,
+                'legacy_payload' => (array) $n,
+                'legacy_synced_at' => now(),
+            ];
+
+            $existing = LegacyNas::where('legacy_source', self::SOURCE)->where('legacy_id', $legacyId)->first();
+
+            if ($existing) {
+                foreach ((array) ($existing->locked_fields ?? []) as $lockedField) {
+                    unset($payload[$lockedField]);
+                }
+                $existing->fill($payload)->save();
+            } else {
+                $x = new LegacyNas();
+                $x->legacy_source = self::SOURCE;
+                $x->legacy_id = $legacyId;
+                $x->fill($payload)->save();
+            }
+        }
+
+        if ($seen !== []) {
+            LegacyNas::where('legacy_source', self::SOURCE)->whereNotIn('legacy_id', $seen)->delete();
+        }
+
+        return count($seen);
+    }
+
 }
