@@ -19,7 +19,7 @@ class LegacySpecialPricesTable
                 TextColumn::make('legacy_customer_id')
                     ->label('Müşteri')
                     ->searchable()
-                    ->formatStateUsing(fn ($state): string => LegacyCustomer::where('legacy_id', $state)->value('name') ?: (string) $state),
+                    ->formatStateUsing(fn ($state): string => LegacyCustomer::find($state)?->name ?: (string) $state),
                 TextColumn::make('package_name')
                     ->label('Paket')
                     ->searchable()
