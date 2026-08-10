@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\LegacyCustomer;
 use App\Models\LegacyCustomerPackage;
+use App\Models\LegacyNas;
 use App\Models\LegacyPackage;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
@@ -28,10 +29,48 @@ class IspCoreImportService
     public function pushAll(bool $dryRun = false): array
     {
         return [
+            'nas' => $this->pushNasDevices($dryRun),
             'packages' => $this->pushPackages($dryRun),
             'customers' => $this->pushCustomers($dryRun),
             'customer_packages' => $this->pushCustomerPackages($dryRun),
         ];
+    }
+
+    /**
+     * Migrate NAS'larını (legacy_nas) CRM nas_devices'a gönderir.
+     *
+     * @return array<string, int>
+     */
+    public function pushNasDevices(bool $dryRun = false): array
+    {
+        [$base, $token] = $this->target();
+        $summary = ['total' => 0, 'created' => 0, 'updated' => 0, 'skipped' => 0, 'error' => 0, 'would_create' => 0, 'would_update' => 0];
+
+        $devices = LegacyNas::query()->orderBy('id')->get()
+            ->map(fn (LegacyNas $n): array => $this->toNasPayload($n))
+            ->values()
+            ->all();
+
+        if ($devices === []) {
+            return $summary;
+        }
+
+        $response = Http::withToken($token)->acceptJson()->asJson()->timeout(60)
+            ->post($base.'/api/internal/migrate/nas', ['dry_run' => $dryRun, 'devices' => $devices]);
+
+        if (! $response->successful()) {
+            $summary['error'] = count($devices);
+
+            return $summary;
+        }
+
+        foreach ((array) $response->json('results', []) as $r) {
+            $action = (string) ($r['action'] ?? 'error');
+            $summary['total']++;
+            $summary[$action] = ($summary[$action] ?? 0) + 1;
+        }
+
+        return $summary;
     }
 
     /**
@@ -269,6 +308,29 @@ class IspCoreImportService
             'status' => $c->status,
             'subscription_ends_at' => $c->subscription_ends_at,
             'legacy_id' => $c->legacy_id ?: $c->id,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function toNasPayload(LegacyNas $n): array
+    {
+        return [
+            'name' => $n->name,
+            'shortname' => $n->shortname,
+            'nas_ip_address' => $n->nas_ip_address,
+            'secret' => $n->secret,
+            'type' => $n->type,
+            'ports' => $n->ports,
+            'status' => $n->status,
+            'description' => $n->description,
+            'api_enabled' => $n->api_enabled,
+            'api_host' => $n->api_host,
+            'api_port' => $n->api_port,
+            'api_username' => $n->api_username,
+            'api_password' => $n->api_password,
+            'api_tls' => $n->api_tls,
         ];
     }
 
