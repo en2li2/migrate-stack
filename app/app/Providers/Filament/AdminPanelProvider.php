@@ -38,6 +38,8 @@ class AdminPanelProvider extends PanelProvider
                 'info' => Color::hex('#0891b2'),
             ])
             ->font('Inter')
+            // Google Translate Livewire DOM'unu bozup 'Error while loading page' verdiriyor → çeviriyi kapat.
+            ->renderHook('panels::head.start', fn (): string => '<meta name="google" content="notranslate">')
             ->renderHook('panels::head.end', fn (): string => static::brandStyles())
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\Filament\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\Filament\Pages')
