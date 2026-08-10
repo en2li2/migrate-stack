@@ -35,7 +35,55 @@ class IspCoreImportService
             'customers' => $this->pushCustomers($dryRun),
             'customer_packages' => $this->pushCustomerPackages($dryRun),
             'usage' => $this->pushUsage($dryRun),
+            'special_prices' => $this->pushSpecialPrices($dryRun),
         ];
+    }
+
+    /**
+     * Özel fiyatları (legacy_special_prices) CRM customer_special_package_prices'a gönderir.
+     *
+     * @return array<string, int>
+     */
+    public function pushSpecialPrices(bool $dryRun = false): array
+    {
+        [$base, $token] = $this->target();
+        $summary = ['total' => 0, 'upserted' => 0, 'skipped' => 0];
+
+        $rows = DB::table('legacy_special_prices as sp')
+            ->join('legacy_customers as lc', 'lc.id', '=', 'sp.legacy_customer_id')
+            ->whereNotNull('lc.pppoe_username')
+            ->where('lc.pppoe_username', '<>', '')
+            ->select('lc.pppoe_username', 'sp.package_name', 'sp.price', 'sp.currency', 'sp.starts_at', 'sp.ends_at', 'sp.is_active', 'sp.notes')
+            ->get();
+
+        if ($rows->isEmpty()) {
+            return $summary;
+        }
+
+        foreach ($rows->chunk(500) as $chunk) {
+            $payload = $chunk->map(fn ($r): array => [
+                'pppoe_username' => $r->pppoe_username,
+                'package_name' => $r->package_name,
+                'price' => $r->price,
+                'currency' => $r->currency,
+                'starts_at' => $r->starts_at,
+                'ends_at' => $r->ends_at,
+                'is_active' => $r->is_active,
+                'notes' => $r->notes,
+            ])->values()->all();
+
+            $response = Http::withToken($token)->acceptJson()->asJson()->timeout(120)
+                ->post($base.'/api/internal/migrate/special-prices', ['dry_run' => $dryRun, 'rows' => $payload]);
+
+            if ($response->successful()) {
+                $s = (array) $response->json('summary', []);
+                foreach (['total', 'upserted', 'skipped'] as $k) {
+                    $summary[$k] += (int) ($s[$k] ?? 0);
+                }
+            }
+        }
+
+        return $summary;
     }
 
     /**
