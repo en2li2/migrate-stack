@@ -80,6 +80,23 @@ return [
             'engine' => null,
         ],
 
+        // ISP Core (isp_panel) — UAVT adres referansı için SALT-OKUR bağlantı.
+        // Aynı MySQL container, migrate user'ına isp_panel.* SELECT grant'li.
+        'isp_panel' => [
+            'driver' => 'mysql',
+            'host' => env('ISP_PANEL_DB_HOST', env('DB_HOST', 'mysql')),
+            'port' => env('ISP_PANEL_DB_PORT', env('DB_PORT', '3306')),
+            'database' => env('ISP_PANEL_DB_DATABASE', 'isp_panel'),
+            'username' => env('ISP_PANEL_DB_USERNAME', env('DB_USERNAME', 'migrate')),
+            'password' => env('ISP_PANEL_DB_PASSWORD', env('DB_PASSWORD', '')),
+            'charset' => 'utf8mb4',
+            'collation' => 'utf8mb4_unicode_ci',
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'strict' => true,
+            'engine' => null,
+        ],
+
         'mariadb' => [
             'driver' => 'mariadb',
             'url' => env('DB_URL'),

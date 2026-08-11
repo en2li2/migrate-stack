@@ -121,6 +121,17 @@ services:
     networks:
       - migrate
 
+  ocr:
+    build:
+      context: ./ocr
+    container_name: migrate-ocr
+    restart: unless-stopped
+    environment:
+      OCR_LANG: en
+    # Dışarı port AÇILMAZ — sadece iç ağdan migrate-php erişir (http://ocr:8000).
+    networks:
+      - migrate
+
 volumes:
   mysql-data:
   minio-data:

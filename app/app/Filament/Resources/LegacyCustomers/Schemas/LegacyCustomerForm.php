@@ -6,6 +6,7 @@ use App\Filament\Forms\Components\StructuredAddressFields;
 use App\Models\LegacyCustomer;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Tabs;
@@ -51,6 +52,9 @@ class LegacyCustomerForm
                     TextInput::make('phone')->label('Telefon')->tel()->maxLength(30),
                     TextInput::make('phone2')->label('Telefon 2')->tel()->maxLength(30),
                     TextInput::make('email')->label('E-posta')->email()->maxLength(160),
+                    Textarea::make('bilgi')->label('Bilgi')
+                        ->placeholder('Aynı TC/VKN altındaki aboneliği ayırt etmek için not (ev / iş yeri / 2. hat …)')
+                        ->rows(2)->maxLength(500)->columnSpanFull(),
                 ])->columns(2),
 
                 // ── ADRES ─────────────────────────────────────────────────

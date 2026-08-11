@@ -4,17 +4,16 @@ namespace App\Filament\Resources\Evrak;
 
 use App\Filament\Resources\Evrak\Pages;
 use App\Models\LegacyCustomer;
-use App\Services\Identity\IdentityVerificationService;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Forms\Components\FileUpload;
+use Filament\Forms\Components\Placeholder;
 use Filament\Navigation\NavigationItem;
-use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
-use Filament\Support\Exceptions\Halt;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
+use Illuminate\Support\HtmlString;
 
 class EvrakResource extends Resource
 {
@@ -77,6 +76,63 @@ class EvrakResource extends Resource
         return "(CASE WHEN customer_type = 'company' THEN ({$company}) ELSE ({$individual}) END)";
     }
 
+    // UploadEvrak sayfasının form bileşenleri (müşteri tipine göre).
+    public static function documentComponents(LegacyCustomer $record): array
+    {
+        $isCompany = $record->customer_type === 'company';
+
+        // Kimlik/vergi levhası yüklenince ANINDA (kaydetmeden) doğrula → alttaki kutu.
+        $verify = fn ($livewire) => method_exists($livewire, 'verifyDocuments') ? $livewire->verifyDocuments() : null;
+
+        return array_merge(
+            [
+                self::docUpload('documents.identity_front', 'Kimlik Ön Yüz')->live()->afterStateUpdated($verify),
+                self::docUpload('documents.identity_back', 'Kimlik Arka Yüz')->live()->afterStateUpdated($verify),
+            ],
+            $isCompany ? [
+                self::docUpload('documents.tax_certificate', 'Vergi Levhası')->live()->afterStateUpdated($verify),
+                self::docUpload('documents.signature_circular', 'İmza Sirküsü'),
+            ] : [],
+            [
+                self::docUpload('documents.contract', 'Sözleşme', 2),
+                self::docUpload('documents.other', 'Diğer Evraklar', 0)->columnSpanFull(),
+                Placeholder::make('evrak_uyari')
+                    ->hiddenLabel()
+                    ->columnSpanFull()
+                    ->visible(fn ($livewire): bool => filled($livewire->evrakError ?? null) || ! empty($livewire->evrakWarnings ?? []) || ! empty($livewire->evrakOk ?? []))
+                    ->content(fn ($livewire): HtmlString => new HtmlString(self::warningsHtml($livewire->evrakError ?? null, $livewire->evrakWarnings ?? [], $livewire->evrakOk ?? []))),
+            ],
+        );
+    }
+
+    // Evrak doğrulama sonucunu form altında kutu olarak render eder.
+    public static function warningsHtml(?string $error, array $warnings, array $ok = []): string
+    {
+        if (filled($error)) {
+            return '<div style="border:1px solid #ef4444;background:#fef2f2;border-radius:8px;padding:12px 14px;">'
+                .'<div style="font-weight:700;color:#b91c1c;font-size:13px;margin-bottom:4px;">⛔ Evrak doğrulanamadı — kaydedilmedi</div>'
+                .'<div style="color:#991b1b;font-size:12.5px;line-height:1.5;">'.e($error).'</div></div>';
+        }
+
+        $html = '';
+
+        if ($ok !== []) {
+            $items = collect($ok)->map(fn (string $w): string => '<li>'.e($w).'</li>')->implode('');
+            $html .= '<div style="border:1px solid #16a34a;background:#f0fdf4;border-radius:8px;padding:12px 14px;margin-bottom:'.($warnings !== [] ? '10px' : '0').';">'
+                .'<div style="font-weight:700;color:#15803d;font-size:13px;margin-bottom:6px;">✓ Doğrulandı</div>'
+                .'<ul style="margin:0;padding-left:18px;color:#166534;font-size:12.5px;line-height:1.6;">'.$items.'</ul></div>';
+        }
+
+        if ($warnings !== []) {
+            $items = collect($warnings)->map(fn (string $w): string => '<li>'.e($w).'</li>')->implode('');
+            $html .= '<div style="border:1px solid #f59e0b;background:#fffbeb;border-radius:8px;padding:12px 14px;">'
+                .'<div style="font-weight:700;color:#b45309;font-size:13px;margin-bottom:6px;">⚠ Evrak kontrol uyarısı — elle doğrulayın</div>'
+                .'<ul style="margin:0;padding-left:18px;color:#92400e;font-size:12.5px;line-height:1.6;">'.$items.'</ul></div>';
+        }
+
+        return $html;
+    }
+
     public static function table(Table $table): Table
     {
         return $table
@@ -100,61 +156,7 @@ class EvrakResource extends Resource
                     ->label('Evrak Yükle')
                     ->icon('heroicon-m-paper-clip')
                     ->color('primary')
-                    ->modalHeading(fn (LegacyCustomer $r): string => ($r->name ?: $r->pppoe_username).' — evraklar')
-                    ->modalWidth('3xl')
-                    ->fillForm(fn (LegacyCustomer $r): array => ['documents' => $r->documents ?? []])
-                    ->schema([
-                        self::docUpload('documents.identity_front', 'Kimlik Ön Yüz'),
-                        self::docUpload('documents.identity_back', 'Kimlik Arka Yüz'),
-                        self::docUpload('documents.tax_certificate', 'Vergi Levhası')
-                            ->visible(fn (LegacyCustomer $r): bool => $r->customer_type === 'company'),
-                        self::docUpload('documents.signature_circular', 'İmza Sirküsü')
-                            ->visible(fn (LegacyCustomer $r): bool => $r->customer_type === 'company'),
-                        self::docUpload('documents.contract', 'Sözleşme', 2),
-                        self::docUpload('documents.other', 'Diğer Evraklar', 0)->columnSpanFull(),
-                    ])
-                    ->action(function (LegacyCustomer $r, array $data): void {
-                        $documents = $data['documents'] ?? [];
-
-                        // Kimlik ön+arka yüklenmişse OCR ile karta göre doğrula:
-                        // yanlış kişinin kimliği yüklenmesin. Kurumsalda yetkilinin
-                        // kimliği (yetkili TC/ad/soyad) esas alınır.
-                        $isCompany = $r->customer_type === 'company';
-                        $cardTc = (string) ($isCompany ? $r->authorized_national_id : $r->national_id);
-                        $cardFirst = (string) ($isCompany ? $r->authorized_first_name : ($r->first_name ?: ''));
-                        $cardLast = (string) ($isCompany ? $r->authorized_last_name : ($r->last_name ?: $r->name));
-
-                        $verification = app(IdentityVerificationService::class)->verifyAgainstCard(
-                            $documents['identity_front'] ?? null,
-                            $documents['identity_back'] ?? null,
-                            $cardTc,
-                            $cardFirst,
-                            $cardLast,
-                        );
-
-                        if ($verification['blocked']) {
-                            Notification::make()
-                                ->title('Kimlik doğrulanamadı — evrak kaydedilmedi')
-                                ->body($verification['reason'])
-                                ->danger()
-                                ->persistent()
-                                ->send();
-
-                            throw new Halt();
-                        }
-
-                        $r->update(['documents' => $documents]);
-
-                        $suffix = $verification['engine_down']
-                            ? ' (OCR motoru kapalı — kimlik doğrulaması atlandı)'
-                            : '';
-
-                        Notification::make()
-                            ->title('Evraklar kaydedildi')
-                            ->body(($r->name ?: $r->pppoe_username).' — evrak durumu güncellendi.'.$suffix)
-                            ->success()
-                            ->send();
-                    }),
+                    ->url(fn (LegacyCustomer $r): string => EvrakResource::getUrl('yukle', ['record' => $r])),
             ]);
     }
 
@@ -183,6 +185,7 @@ class EvrakResource extends Resource
     {
         return [
             'index' => Pages\ListEvrak::route('/'),
+            'yukle' => Pages\UploadEvrak::route('/{record}/yukle'),
         ];
     }
 }

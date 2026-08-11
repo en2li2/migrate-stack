@@ -35,7 +35,7 @@ class IdentityVerificationService
         string $cardLastName,
     ): array {
         $empty = ['tc' => null, 'surname' => null, 'given' => null];
-        $pass = ['blocked' => false, 'reason' => null, 'identity' => $empty, 'engine_down' => false];
+        $pass = ['blocked' => false, 'reason' => null, 'warning' => null, 'identity' => $empty, 'engine_down' => false];
 
         $temps = [];
 
@@ -49,66 +49,76 @@ class IdentityVerificationService
                 return $pass;
             }
 
-            if ($frontPath === null || $backPath === null) {
+            // Migrate (temizlik) paneli: OCR yalnız Tesseract → İSİM okumaları
+            // güvenilmez (ör. "Fırat" -> "Nevin"). TEK SERT BLOK = OCR'ın
+            // checksum-geçerli ve KARTTAN FARKLI bir TC okuması (yanlış kişi
+            // koruması). Tek yüz / okunamama / isim uyuşmazlığı kaydı ENGELLEMEZ;
+            // yalnız UYARI olarak döner (operatör migrate'te elle doğrular).
+            $identity = ['tc' => null, 'surname' => null, 'given' => null];
+            if ($frontPath !== null) {
+                $identity = $this->ocr->readIdentityFromFile($frontPath);
+            }
+            if ($backPath !== null) {
+                $back = $this->ocr->readIdentityFromFile($backPath);
+                $identity['tc'] ??= $back['tc'];
+                if ($back['surname'] !== null && $back['given'] !== null) {
+                    $identity['surname'] = $back['surname'];
+                    $identity['given'] = $back['given'];
+                } else {
+                    $identity['surname'] ??= $back['surname'];
+                    $identity['given'] ??= $back['given'];
+                }
+            }
+
+            $cardTcDigits = preg_replace('/\D+/', '', $cardTc) ?? '';
+            $readTc = $identity['tc'];
+
+            // SERT BLOK: net (checksum-geçerli) ve karttan farklı TC → yanlış kişi.
+            if ($cardTcDigits !== '' && $readTc !== null && $this->ocr->isValidTc($readTc) && $readTc !== $cardTcDigits) {
                 return [
                     'blocked' => true,
-                    'reason' => 'Kimliğin her iki yüzü de yüklenmeli.',
-                    'identity' => $empty,
+                    'reason' => 'TC uyuşmuyor — kimlikte '.$readTc.', kayıtta '.$cardTcDigits.'. Yanlış kişinin kimliği yüklenmiş olabilir.',
+                    'warning' => null,
+                    'identity' => $identity,
                     'engine_down' => false,
                 ];
             }
 
-            $identity = $this->readBothSides($frontPath, $backPath);
+            // Bundan sonrası UYARI (kaydı engellemez).
+            $warnings = [];
+
+            if ($frontPath === null || $backPath === null) {
+                $warnings[] = 'Kimliğin yalnız bir yüzü yüklendi.';
+            }
 
             $unread = array_keys(array_filter(
                 ['TC' => $identity['tc'], 'Ad' => $identity['given'], 'Soyad' => $identity['surname']],
                 fn (?string $value): bool => $value === null,
             ));
 
-            // Hiçbir alan okunamadıysa suç görüntüde olmayabilir: motor da kapalı
-            // olabilir. Motor kapalıyken kayıt akışını durdurmak yanlış olur —
-            // uyarıyla geçilir (kilit yalnız motor ayaktayken anlamlı).
-            if (count($unread) === 3 && ! $this->engineAvailable()) {
-                return ['blocked' => false, 'reason' => null, 'identity' => $identity, 'engine_down' => true];
+            $engineDown = count($unread) === 3 && ! $this->engineAvailable();
+
+            if (! $engineDown) {
+                if ($unread !== []) {
+                    $warnings[] = 'OCR okuyamadı: '.implode(', ', $unread).' — elle doğrulayın.';
+                } else {
+                    $readName = trim(($identity['given'] ?? '').' '.($identity['surname'] ?? ''));
+                    $cardName = trim(trim($cardFirstName).' '.trim($cardLastName));
+                    $readTokens = $this->ocr->nameTokens($readName);
+                    $cardTokens = $this->ocr->nameTokens($cardName);
+                    if ($readTokens !== [] && $cardTokens !== [] && array_diff($readTokens, $cardTokens) !== []) {
+                        $warnings[] = 'Ad/Soyad OCR ile uyuşmadı (kimlikte "'.$readName.'", kayıtta "'.$cardName.'") — OCR hatası olabilir, elle doğrulayın.';
+                    }
+                }
             }
 
-            if ($unread !== []) {
-                return [
-                    'blocked' => true,
-                    'reason' => 'Kimlikten okunamadı: '.implode(', ', $unread).'. Daha net/düz bir görüntü yükleyin.',
-                    'identity' => $identity,
-                    'engine_down' => false,
-                ];
-            }
-
-            $cardTcDigits = preg_replace('/\D+/', '', $cardTc) ?? '';
-
-            if ($cardTcDigits !== '' && $cardTcDigits !== $identity['tc']) {
-                return [
-                    'blocked' => true,
-                    'reason' => 'TC uyuşmuyor — kimlikte '.$identity['tc'].', kayıtta '.$cardTcDigits.'. Yanlış kişinin kimliği yüklenmiş olabilir.',
-                    'identity' => $identity,
-                    'engine_down' => false,
-                ];
-            }
-
-            $readName = trim(($identity['given'] ?? '').' '.($identity['surname'] ?? ''));
-            $cardName = trim(trim($cardFirstName).' '.trim($cardLastName));
-            $readTokens = $this->ocr->nameTokens($readName);
-            $cardTokens = $this->ocr->nameTokens($cardName);
-
-            // Okunan her kelime kartta bulunmalı. Ters yön ARANMAZ: kartta
-            // kimlikte olmayan ikinci ad bulunabilir (kimlikte kısaltılmış olabilir).
-            if ($readTokens !== [] && $cardTokens !== [] && array_diff($readTokens, $cardTokens) !== []) {
-                return [
-                    'blocked' => true,
-                    'reason' => 'Ad/Soyad uyuşmuyor — kimlikte "'.$readName.'", kayıtta "'.$cardName.'".',
-                    'identity' => $identity,
-                    'engine_down' => false,
-                ];
-            }
-
-            return ['blocked' => false, 'reason' => null, 'identity' => $identity, 'engine_down' => false];
+            return [
+                'blocked' => false,
+                'reason' => null,
+                'warning' => $warnings !== [] ? implode(' ', $warnings) : null,
+                'identity' => $identity,
+                'engine_down' => $engineDown,
+            ];
         } finally {
             foreach ($temps as $temp) {
                 @unlink($temp);
@@ -125,6 +135,13 @@ class IdentityVerificationService
     private function readBothSides(string $frontPath, string $backPath): array
     {
         $identity = $this->ocr->readIdentityFromFile($frontPath);
+
+        // HIZ: ön yüz TC + ad + soyad'ı TAM verdiyse arka yüzü OKUMA (2 kat hızlı).
+        // Arka yüz yalnız ön eksikse ya da isim MRZ'den doğrulanacaksa gerekir.
+        if ($identity['tc'] !== null && $identity['surname'] !== null && $identity['given'] !== null) {
+            return $identity;
+        }
+
         $back = $this->ocr->readIdentityFromFile($backPath);
 
         $identity['tc'] ??= $back['tc'];
