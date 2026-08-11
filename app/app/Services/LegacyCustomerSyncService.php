@@ -107,12 +107,14 @@ class LegacyCustomerSyncService
                 if (filled($existing->new_address_text)) {
                     unset($payload['address']);
                 }
+                $existing->syncing = true;
                 $existing->fill($payload)->save();
                 $updated++;
             } else {
                 $c = new LegacyCustomer();
                 $c->legacy_source = self::SOURCE;
                 $c->legacy_id = $legacyId;
+                $c->syncing = true;
                 $c->fill($payload)->save();
                 $created++;
             }

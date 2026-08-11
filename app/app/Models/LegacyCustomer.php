@@ -8,6 +8,13 @@ class LegacyCustomer extends Model
 {
     protected $guarded = ['id'];
 
+    /**
+     * Legacy Sync bu bayrağı true yaparak kaydeder; true iken saving hook'u
+     * değişen alanları OTOMATİK KİLİTLEMEZ (yoksa sync'in kendi yazdığı her
+     * alan kilitlenir ve bir daha güncellenemez). Kalıcı bir kolon DEĞİL.
+     */
+    public bool $syncing = false;
+
     protected $casts = [
         'documents' => 'array',
         'locked_fields' => 'array',
@@ -72,6 +79,31 @@ class LegacyCustomer extends Model
                 }
             }
             $c->documents = $clean !== [] ? $clean : null;
+        });
+
+        // Elle düzeltme kilidi (POPULATION): operatör bir alanı formda değiştirip
+        // kaydettiğinde o alan locked_fields'e eklenir → sonraki Legacy Sync o alanı
+        // EZMEZ (enforcement tarafı LegacyCustomerSyncService'te unset payload).
+        // Sync kendi yazımında ($syncing=true) kilit koymaz; create'te (henüz
+        // exists değil) kilitlenecek "elle düzeltme" yoktur. documents evrak akışıyla
+        // yazılır ve sync payload'ında yer almaz → kilitlemeye gerek yok.
+        static::saving(function (LegacyCustomer $c): void {
+            if ($c->syncing || ! $c->exists) {
+                return;
+            }
+            $locked = (array) ($c->locked_fields ?? []);
+            $before = $locked;
+            foreach (self::EDITABLE_FIELDS as $field) {
+                if ($field === 'documents') {
+                    continue;
+                }
+                if ($c->isDirty($field) && ! in_array($field, $locked, true)) {
+                    $locked[] = $field;
+                }
+            }
+            if ($locked !== $before) {
+                $c->locked_fields = array_values($locked);
+            }
         });
     }
 
