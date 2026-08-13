@@ -387,6 +387,8 @@ class IspCoreImportService
     {
         return [
             'pppoe_username' => $c->pppoe_username,
+            'pppoe_password' => $c->pppoe_password,
+            'is_free' => (bool) $c->is_free,
             'customer_type' => $c->customer_type,
             'first_name' => $c->first_name,
             'last_name' => $c->last_name,
@@ -400,6 +402,7 @@ class IspCoreImportService
             'phone' => $c->phone,
             'phone2' => $c->phone2,
             'email' => $c->email,
+            'bilgi' => $c->bilgi,
             'address' => $c->address,
             'address_building_name' => $c->address_building_name,
             'structured_address_text' => $c->structured_address_text,

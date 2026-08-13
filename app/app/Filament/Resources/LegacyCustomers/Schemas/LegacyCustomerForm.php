@@ -8,6 +8,7 @@ use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Tabs;
 use Filament\Schemas\Components\Tabs\Tab;
@@ -55,6 +56,11 @@ class LegacyCustomerForm
                     Textarea::make('bilgi')->label('Bilgi')
                         ->placeholder('Aynı TC/VKN altındaki aboneliği ayırt etmek için not (ev / iş yeri / 2. hat …)')
                         ->rows(2)->maxLength(500)->columnSpanFull(),
+                    Toggle::make('is_free')
+                        ->label('Ücretsiz')
+                        ->helperText('Açık ise bu müşteri ücretsiz (faturasız) internet kullanıcısı olarak işaretlenir.')
+                        ->inline(false)
+                        ->columnSpanFull(),
                 ])->columns(2),
 
                 // ── ADRES ─────────────────────────────────────────────────

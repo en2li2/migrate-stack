@@ -17,6 +17,7 @@ class LegacyCustomer extends Model
 
     protected $casts = [
         'documents' => 'array',
+        'is_free' => 'boolean',
         'locked_fields' => 'array',
         'legacy_payload' => 'array',
         'sync_issues' => 'array',
@@ -34,7 +35,7 @@ class LegacyCustomer extends Model
         'new_address_city_id', 'new_address_district_id', 'new_address_neighborhood_id', 'new_address_street_id',
         'new_address_building_name', 'new_address_building_no', 'new_address_apartment_no', 'new_address_note',
         'invoice_timing_mode', 'invoice_timing_grace_hours', 'invoice_timing_advance_days',
-        'documents',
+        'documents', 'is_free',
     ];
 
     protected static function booted(): void
